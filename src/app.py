@@ -5,14 +5,60 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import json
+import secrets
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+teacher_auth = HTTPBasic(auto_error=False)
+
+
+def require_teacher(
+        credentials: HTTPBasicCredentials | None = Depends(teacher_auth)):
+    teacher_credentials = os.getenv("TEACHER_CREDENTIALS")
+
+    try:
+        configured_teachers = json.loads(teacher_credentials or "")
+    except json.JSONDecodeError:
+        configured_teachers = None
+
+    if (not isinstance(configured_teachers, dict)
+            or not configured_teachers
+            or any(not isinstance(username, str)
+                   or not isinstance(password, str) or not password
+                   for username, password in configured_teachers.items())):
+        raise HTTPException(
+            status_code=503,
+            detail="Teacher credentials are not configured correctly"
+        )
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Teacher authentication required",
+            headers={"WWW-Authenticate": "Basic"}
+        )
+
+    authenticated = False
+    for username, password in configured_teachers.items():
+        username_matches = secrets.compare_digest(credentials.username, username)
+        password_matches = secrets.compare_digest(credentials.password, password)
+        authenticated = authenticated or (username_matches and password_matches)
+
+    if not authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid teacher credentials",
+            headers={"WWW-Authenticate": "Basic"}
+        )
+
+    return credentials.username
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
@@ -88,8 +134,15 @@ def get_activities():
     return activities
 
 
+@app.post("/auth")
+def authenticate_teacher(teacher: str = Depends(require_teacher)):
+    return {"username": teacher}
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(
+        activity_name: str, email: str,
+        _teacher: str = Depends(require_teacher)):
     """Sign up a student for an activity"""
     # Validate activity exists
     if activity_name not in activities:
@@ -111,7 +164,9 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(
+    activity_name: str, email: str,
+    _teacher: str = Depends(require_teacher)):
     """Unregister a student from an activity"""
     # Validate activity exists
     if activity_name not in activities:
