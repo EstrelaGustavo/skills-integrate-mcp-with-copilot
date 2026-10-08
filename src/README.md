@@ -15,11 +15,11 @@ A super simple FastAPI application that allows students to view and sign up for 
    pip install fastapi uvicorn
    ```
 
-2. Configure teacher credentials in the environment. Do not commit these values:
+2. Configure teacher credentials as a JSON object in the environment. Add one
+   username/password pair for each teacher, and do not commit these values:
 
    ```sh
-   export TEACHER_USERNAME="teacher"
-   export TEACHER_PASSWORD="choose-a-strong-password"
+   export TEACHER_CREDENTIALS='{"teacher1":"strong-password-1","teacher2":"strong-password-2"}'
    ```
 
 3. Run the application from the repository root:
@@ -42,7 +42,7 @@ A super simple FastAPI application that allows students to view and sign up for 
 | DELETE | `/activities/{activity_name}/unregister?email=student@mergington.edu` | Remove a student (teacher credentials required)                  |
 
 The activity list remains public. Sign-up and removal require HTTP Basic
-credentials configured through `TEACHER_USERNAME` and `TEACHER_PASSWORD`.
+credentials listed in the `TEACHER_CREDENTIALS` environment variable.
 Use HTTPS when exposing the application outside a trusted local environment.
 
 ## Data Model

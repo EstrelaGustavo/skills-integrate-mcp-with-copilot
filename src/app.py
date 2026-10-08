@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import json
 import secrets
 
 app = FastAPI(title="Mergington High School API",
@@ -20,13 +21,21 @@ teacher_auth = HTTPBasic(auto_error=False)
 
 def require_teacher(
         credentials: HTTPBasicCredentials | None = Depends(teacher_auth)):
-    teacher_username = os.getenv("TEACHER_USERNAME")
-    teacher_password = os.getenv("TEACHER_PASSWORD")
+    teacher_credentials = os.getenv("TEACHER_CREDENTIALS")
 
-    if not teacher_username or not teacher_password:
+    try:
+        configured_teachers = json.loads(teacher_credentials or "")
+    except json.JSONDecodeError:
+        configured_teachers = None
+
+    if (not isinstance(configured_teachers, dict)
+            or not configured_teachers
+            or any(not isinstance(username, str)
+                   or not isinstance(password, str) or not password
+                   for username, password in configured_teachers.items())):
         raise HTTPException(
             status_code=503,
-            detail="Teacher credentials are not configured"
+            detail="Teacher credentials are not configured correctly"
         )
 
     if credentials is None:
@@ -36,11 +45,13 @@ def require_teacher(
             headers={"WWW-Authenticate": "Basic"}
         )
 
-    username_matches = secrets.compare_digest(
-        credentials.username, teacher_username)
-    password_matches = secrets.compare_digest(
-        credentials.password, teacher_password)
-    if not username_matches or not password_matches:
+    authenticated = False
+    for username, password in configured_teachers.items():
+        username_matches = secrets.compare_digest(credentials.username, username)
+        password_matches = secrets.compare_digest(credentials.password, password)
+        authenticated = authenticated or (username_matches and password_matches)
+
+    if not authenticated:
         raise HTTPException(
             status_code=401,
             detail="Invalid teacher credentials",
